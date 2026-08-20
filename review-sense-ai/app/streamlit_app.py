@@ -1,13 +1,67 @@
-
 import streamlit as st
 import pandas as pd
 import numpy as np
 import joblib
 import re
 import io
+import base64
 from pathlib import Path
 import plotly.express as px
 from collections import Counter
+
+
+def style_plotly_fig(fig):
+    """Make Plotly charts blend into the premium dark-glass UI."""
+    fig.update_layout(
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="#E9ECF8"),
+        colorway=["#FF3D8D", "#FF8A3D", "#FFC83D", "#35D07F", "#20C7B5", "#9B6CFF"],
+        margin=dict(t=10, b=10, l=10, r=10),
+        legend=dict(font=dict(color="#DCE1F2")),
+    )
+    fig.update_xaxes(
+        showgrid=True,
+        gridcolor="rgba(255,255,255,0.10)",
+        zeroline=False,
+        tickfont=dict(color="#AEB6D4"),
+        title_font=dict(color="#C9D0E8"),
+    )
+    fig.update_yaxes(
+        showgrid=True,
+        gridcolor="rgba(255,255,255,0.10)",
+        zeroline=False,
+        tickfont=dict(color="#AEB6D4"),
+        title_font=dict(color="#C9D0E8"),
+    )
+    return fig
+
+
+def render_sentiment_card_html(cls, label, count, pct):
+    """Return a single-line HTML sentiment card so Streamlit never treats it as a code block."""
+    colors = {
+        "strong-neg": ("#FF3D72", "rgba(255,61,114,.30)"),
+        "neg": ("#FF963D", "rgba(255,150,61,.28)"),
+        "mixed": ("#FFC83D", "rgba(255,200,61,.25)"),
+        "pos": ("#35D07F", "rgba(53,208,127,.28)"),
+        "strong-pos": ("#20C7B5", "rgba(32,199,181,.28)"),
+    }
+    color, glow = colors.get(cls, ("#FF5A9D", "rgba(255,90,157,.25)"))
+    pct = max(0.0, min(100.0, float(pct)))
+    # No newlines/leading indentation: Streamlit's Markdown parser cannot turn this into a code block.
+    return (
+        f'<div class="rs-sentiment-card {cls}" style="--pct:{pct:.2f}%;--sentiment:{color};--sentiment-glow:{glow};">'
+        f'<div class="label">{label}</div>'
+        f'<div class="visual-row">'
+        f'<div class="ring" style="background:conic-gradient({color} {pct:.2f}%,rgba(255,255,255,.08) 0);box-shadow:0 0 16px {glow};">'
+        f'<div class="ring-inner"><div class="ring-pct">{pct:.1f}%</div><div class="ring-small">share</div></div></div>'
+        f'<div class="count-wrap"><div class="count" style="color:{color};text-shadow:0 0 13px {glow};">{int(count):,}</div><div class="count-label">reviews</div></div>'
+        f'</div>'
+        f'<div class="track"><div class="fill" style="width:{pct:.2f}%;background:{color};box-shadow:0 0 12px {glow};"></div></div>'
+        f'<div class="foot"><span>Dataset share</span><strong>{pct:.1f}%</strong></div>'
+        f'</div>'
+    )
+
 
 # PATHS
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -18,64 +72,651 @@ REPORTS_PATH = PROJECT_ROOT / "outputs" / "reports"
 # PAGE CONFIG
 st.set_page_config(page_title="ReviewSense", page_icon="💬", layout="wide")
 
+# ============================================================
+# REVIEW SENSE — PREMIUM PINK GLASS UI
+# ============================================================
+# Put your downloaded image here:
+#     review-sense-ai/static/background.jpg
+#
+# .streamlit/config.toml must contain:
+#     [server]
+#     enableStaticServing = true
+# ============================================================
+# ============================================================
+# REVIEW SENSE — PREMIUM PINK ANALYTICS UI
+# ============================================================
 
-# STYLE
-st.markdown(
-    """
-    <style>
-      .rs-card {
-        border: 1px solid rgba(255,255,255,0.09);
-        border-radius: 14px;
-        padding: 14px 16px;
-        background: rgba(255,255,255,0.03);
-      }
-      .rs-kpi {
-        font-size: 28px;
-        font-weight: 750;
-        line-height: 1.05;
-        margin-top: 6px;
-      }
-      .rs-sub {
-        font-size: 12px;
-        opacity: 0.78;
-        margin-top: 3px;
-      }
-      .rs-title {
-        font-size: 14px;
-        font-weight: 700;
-        opacity: 0.95;
-      }
-      .rs-chip {
-        display: inline-block;
-        padding: 6px 10px;
-        border-radius: 999px;
-        border: 1px solid rgba(255,255,255,0.12);
-        background: rgba(255,255,255,0.04);
-        font-size: 12px;
-        margin-right: 6px;
-        margin-bottom: 6px;
-      }
-      .hl{
-        display:inline-block;
-        padding: 1px 6px;         /* smaller padding */
-        border-radius: 8px;
-        line-height: 1.4;
-        margin: 0 1px;
-        font-weight: 600;
-        color: #ffffff !important; /* readable in dark theme */
-        border: 1px solid rgba(255,255,255,0.18);
-      }
-      .hl-pos{
-        background: rgba(34,197,94,0.55);  /* green, not too bright */
-      }
-      .hl-neg{
-        background: rgba(239,68,68,0.55);  /* red, not too bright */
-      }
-    
-    </style>
-    """,
-    unsafe_allow_html=True
+background_candidates = [
+    PROJECT_ROOT / "static" / "background.jpg",
+    PROJECT_ROOT / "static" / "background.jpeg",
+    PROJECT_ROOT / "static" / "background.png",
+    PROJECT_ROOT / "app" / "static" / "background.jpg",
+    PROJECT_ROOT / "app" / "static" / "background.png",
+]
+
+background_uri = ""
+for _bg_path in background_candidates:
+    if _bg_path.exists():
+        _mime = "image/png" if _bg_path.suffix.lower() == ".png" else "image/jpeg"
+        _encoded = base64.b64encode(_bg_path.read_bytes()).decode("utf-8")
+        background_uri = f"data:{_mime};base64,{_encoded}"
+        break
+
+background_layer = (
+    f'url("{background_uri}")'
+    if background_uri
+    else "linear-gradient(135deg,#fff4f8,#f9eaf2)"
 )
+
+st.markdown(f"""
+<style>
+
+html, body, .stApp {{
+    font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont,
+                 "Segoe UI", sans-serif !important;
+}}
+
+.stApp {{
+    background: transparent !important;
+    color: #F7F8FF !important;
+}}
+
+[data-testid="stAppViewContainer"] {{
+    background:
+        linear-gradient(135deg, rgba(6, 9, 27, .48), rgba(11, 8, 36, .30)),
+        {background_layer}
+        center center / cover fixed no-repeat !important;
+}}
+
+[data-testid="stMain"],
+.main,
+.main .block-container {{
+    background: transparent !important;
+}}
+
+.main .block-container {{
+    max-width: 1500px !important;
+    padding: 2rem 2.5rem 5rem !important;
+}}
+
+[data-testid="stHeader"] {{
+    height: 58px !important;
+    background: rgba(7, 11, 31, .48) !important;
+    border-bottom: 1px solid rgba(255,255,255,.10) !important;
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+}}
+
+/* SIDEBAR */
+section[data-testid="stSidebar"] {{ width: 280px !important; }}
+
+[data-testid="stSidebar"] {{
+    background: rgba(7, 11, 31, .88) !important;
+    border-right: 1px solid rgba(255,255,255,.10) !important;
+    box-shadow: 10px 0 40px rgba(0,0,0,.25);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+}}
+
+[data-testid="stSidebar"] > div:first-child {{ background: transparent !important; }}
+
+.rs-side-brand {{
+    display:flex; align-items:center; gap:11px; padding:8px 7px 2px;
+}}
+
+.rs-side-logo {{
+    width:42px; height:42px; border-radius:13px;
+    display:flex; align-items:center; justify-content:center;
+    color:white;
+    background:linear-gradient(135deg,#FF3D8D,#C92CFF);
+    box-shadow:0 8px 25px rgba(255,61,141,.30);
+    font-size:20px; font-weight:800;
+}}
+
+.rs-side-brand-name {{
+    font-size:1.18rem; line-height:1; font-weight:850;
+    letter-spacing:-.6px; color:#FFFFFF;
+}}
+
+.rs-side-brand-name span {{ color:#FF3D8D; }}
+
+.rs-side-caption {{
+    margin:6px 0 27px 53px; font-size:.70rem;
+    font-weight:600; color:#AEB6D4;
+}}
+
+.rs-nav-label {{
+    margin:0 7px 10px; font-size:.67rem;
+    text-transform:uppercase; letter-spacing:.12em;
+    font-weight:800; color:#FF5A9D;
+}}
+
+[data-testid="stSidebar"] [data-testid="stRadio"] label {{
+    min-height:40px; margin:3px 0 !important; padding:9px 10px !important;
+    border-radius:12px !important; font-size:.88rem !important;
+    font-weight:650 !important; color:#D7DCEF !important;
+    transition:all .18s ease;
+}}
+
+[data-testid="stSidebar"] [data-testid="stRadio"] label:hover {{
+    background:rgba(255,61,141,.10) !important;
+    color:#FFFFFF !important;
+}}
+
+.rs-side-info {{
+    margin-top:20px; padding:16px 15px;
+    border:1px solid rgba(255,255,255,.11);
+    border-radius:17px;
+    background:linear-gradient(145deg,rgba(255,255,255,.10),rgba(255,255,255,.035));
+    box-shadow:0 10px 30px rgba(0,0,0,.16);
+    backdrop-filter:blur(18px);
+}}
+
+.rs-side-info-title {{ font-size:.83rem; font-weight:800; color:#F5F7FF; }}
+
+.rs-side-info-text {{
+    margin-top:7px; font-size:.72rem; line-height:1.55; color:#AEB6D4;
+}}
+
+/* HERO */
+.rs-hero {{ padding:.8rem .2rem 1rem; }}
+
+.rs-hero-row {{ display:flex; align-items:center; gap:14px; }}
+
+.rs-hero-icon {{
+    width:58px; height:58px; border-radius:18px;
+    display:flex; align-items:center; justify-content:center;
+    background:linear-gradient(135deg,#FF3D8D,#C94EFF);
+    color:white; font-size:28px;
+    box-shadow:0 12px 32px rgba(255,61,141,.32), inset 0 1px 0 rgba(255,255,255,.25);
+}}
+
+.rs-hero-title {{
+    font-size:2.7rem; line-height:1; font-weight:850;
+    letter-spacing:-2px; color:#FFFFFF;
+    text-shadow:0 4px 25px rgba(0,0,0,.20);
+}}
+
+.rs-hero-title span {{ color:#FF3D8D; }}
+
+.rs-hero-subtitle {{
+    margin:10px 0 0 72px; font-size:.94rem; color:#C1C8DF;
+}}
+
+.rs-mode-row {{
+    margin:16px 0 0 72px; display:flex; align-items:center; gap:10px;
+}}
+
+.rs-mode-pill {{
+    padding:7px 11px; border-radius:999px;
+    background:rgba(255,255,255,.08);
+    border:1px solid rgba(255,255,255,.12);
+    color:#C9D0E8; font-size:.73rem; font-weight:700;
+}}
+
+/* TYPOGRAPHY */
+.stApp p, .stApp span, .stApp label {{ color:#C4CADF; }}
+
+.stApp h1, .stApp h2, .stApp h3, .stApp h4 {{
+    color:#FFFFFF !important; font-weight:800 !important;
+}}
+
+[data-testid="stCaptionContainer"] {{ color:#AEB6D4 !important; }}
+
+hr {{ border-color:rgba(255,255,255,.10) !important; }}
+
+/* SECTIONS */
+.rs-section {{
+    margin:1.35rem 0 .75rem; display:flex; align-items:center; gap:10px;
+}}
+
+.rs-section-icon {{
+    width:34px; height:34px; display:flex; align-items:center; justify-content:center;
+    border-radius:10px; background:rgba(255,255,255,.11);
+    border:1px solid rgba(255,255,255,.12); color:#FF5A9D; font-size:17px;
+    box-shadow:0 6px 18px rgba(0,0,0,.12);
+}}
+
+.rs-section-title {{
+    font-size:1.3rem; font-weight:820; letter-spacing:-.5px; color:#FFFFFF;
+}}
+
+.rs-section-sub {{ margin-left:2px; font-size:.73rem; color:#AEB6D4; }}
+
+/* GLASS CARDS */
+.rs-card,
+.rs-review-panel,
+.rs-review-panel.positive,
+.rs-review-panel.negative,
+.rs-theme-panel,
+.rs-quick,
+.rs-kpi-card,
+.rs-chart-head {{
+    background:linear-gradient(145deg,rgba(255,255,255,.13),rgba(255,255,255,.045)) !important;
+    border:1px solid rgba(255,255,255,.15) !important;
+    box-shadow:0 14px 38px rgba(0,0,0,.20), inset 0 1px 0 rgba(255,255,255,.10) !important;
+    backdrop-filter:blur(18px); -webkit-backdrop-filter:blur(18px);
+}}
+
+/* KPI */
+.rs-kpi-card {{
+    position:relative; min-height:108px; display:flex; align-items:center;
+    gap:14px; padding:17px 18px; border-radius:20px; overflow:hidden;
+}}
+
+.rs-kpi-icon {{
+    flex:0 0 47px; width:47px; height:47px;
+    display:flex; align-items:center; justify-content:center;
+    border-radius:50%; font-size:21px; color:white;
+    box-shadow:0 7px 22px var(--kpi-shadow); background:var(--kpi-color);
+}}
+
+.rs-kpi-icon.pink {{ --kpi-color:#FF3D8D; --kpi-shadow:rgba(255,61,141,.32); }}
+.rs-kpi-icon.green {{ --kpi-color:#35D07F; --kpi-shadow:rgba(53,208,127,.30); }}
+.rs-kpi-icon.red {{ --kpi-color:#FF5570; --kpi-shadow:rgba(255,85,112,.30); }}
+.rs-kpi-icon.purple {{ --kpi-color:#9B6CFF; --kpi-shadow:rgba(155,108,255,.30); }}
+
+.rs-kpi-label {{ font-size:.70rem; font-weight:750; color:#B8C0D8; }}
+
+.rs-kpi-value {{
+    margin-top:4px; font-size:1.7rem; line-height:1;
+    font-weight:850; letter-spacing:-.7px; color:#FF5A9D;
+}}
+
+.rs-kpi-value.green {{ color:#35D07F; }}
+.rs-kpi-value.red {{ color:#FF5570; }}
+.rs-kpi-value.purple {{ color:#9B6CFF; }}
+
+.rs-kpi-sub {{ margin-top:6px; font-size:.66rem; color:#929BB7; }}
+
+/* BUSINESS INSIGHTS — PREMIUM REVIEW VISUALS */
+.rs-bi-review-card {{
+    position:relative;
+    min-height:158px;
+    padding:18px 18px 16px;
+    border-radius:20px;
+    overflow:hidden;
+    background:linear-gradient(145deg,rgba(255,255,255,.105),rgba(255,255,255,.035));
+    border:1px solid rgba(255,255,255,.13);
+    box-shadow:0 14px 38px rgba(0,0,0,.20), inset 0 1px 0 rgba(255,255,255,.08);
+    backdrop-filter:blur(18px);
+    -webkit-backdrop-filter:blur(18px);
+    transition:transform .22s ease, border-color .22s ease, box-shadow .22s ease;
+}}
+.rs-bi-review-card:hover {{
+    transform:translateY(-4px);
+    border-color:var(--bi-color);
+    box-shadow:0 18px 42px rgba(0,0,0,.28), 0 0 24px var(--bi-glow);
+}}
+.rs-bi-review-card::before {{
+    content:"";
+    position:absolute;
+    left:0; top:0; bottom:0;
+    width:4px;
+    background:var(--bi-color);
+    box-shadow:0 0 18px var(--bi-color);
+}}
+.rs-bi-review-card.positive {{ --bi-color:#35D07F; --bi-glow:rgba(53,208,127,.24); }}
+.rs-bi-review-card.negative {{ --bi-color:#FF5570; --bi-glow:rgba(255,85,112,.24); }}
+.rs-bi-review-card.mixed {{ --bi-color:#FFC21C; --bi-glow:rgba(255,194,28,.22); }}
+.rs-bi-review-head {{ display:flex; align-items:center; justify-content:space-between; gap:10px; }}
+.rs-bi-review-title {{ color:#F7F9FF; font-size:.88rem; font-weight:850; }}
+.rs-bi-review-icon {{
+    width:34px; height:34px; border-radius:11px;
+    display:flex; align-items:center; justify-content:center;
+    color:var(--bi-color); background:rgba(255,255,255,.07);
+    border:1px solid color-mix(in srgb,var(--bi-color) 55%, transparent);
+    box-shadow:0 0 18px var(--bi-glow);
+}}
+.rs-bi-review-stat {{ margin-top:10px; display:flex; align-items:baseline; gap:9px; }}
+.rs-bi-review-count {{ color:var(--bi-color); font-size:1.9rem; line-height:1; font-weight:950; text-shadow:0 0 16px var(--bi-glow); }}
+.rs-bi-review-pct {{ color:#F1F4FB; font-size:1.05rem; font-weight:850; }}
+.rs-bi-review-sub {{ margin-top:5px; color:#929BB7; font-size:.68rem; }}
+.rs-bi-review-track {{ margin-top:12px; height:9px; border-radius:999px; background:rgba(255,255,255,.09); overflow:hidden; }}
+.rs-bi-review-fill {{ height:100%; width:var(--bi-pct); border-radius:999px; background:linear-gradient(90deg,var(--bi-color),color-mix(in srgb,var(--bi-color) 62%,white)); box-shadow:0 0 14px var(--bi-glow); }}
+.rs-bi-review-foot {{ margin-top:10px; display:flex; justify-content:space-between; color:#8E97B1; font-size:.64rem; font-weight:700; }}
+.rs-bi-theme-card {{
+    border-radius:18px; padding:16px 17px;
+    background:linear-gradient(145deg,rgba(255,255,255,.09),rgba(255,255,255,.035));
+    border:1px solid rgba(255,255,255,.12);
+    box-shadow:0 12px 30px rgba(0,0,0,.18), inset 0 1px 0 rgba(255,255,255,.07);
+}}
+.rs-bi-theme-card.positive {{ border-color:rgba(53,208,127,.28); }}
+.rs-bi-theme-card.negative {{ border-color:rgba(255,85,112,.28); }}
+.rs-bi-theme-label {{ font-size:.68rem; color:#929BB7; margin-bottom:10px; }}
+.rs-bi-theme-chips {{ display:flex; flex-wrap:wrap; gap:7px; }}
+.rs-bi-theme-chip {{
+    display:inline-flex; padding:6px 10px; border-radius:999px;
+    font-size:.68rem; font-weight:750; color:#E9ECF7;
+    background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.10);
+}}
+.rs-bi-theme-card.positive .rs-bi-theme-chip {{ color:#72E5A5; border-color:rgba(53,208,127,.25); background:rgba(53,208,127,.08); }}
+.rs-bi-theme-card.negative .rs-bi-theme-chip {{ color:#FF8296; border-color:rgba(255,85,112,.25); background:rgba(255,85,112,.08); }}
+.rs-bi-quote {{
+    margin-top:12px; padding:13px 14px; border-radius:15px;
+    background:rgba(0,0,0,.16); border:1px solid rgba(255,255,255,.09);
+    color:#DDE2F0; font-size:.72rem; line-height:1.55;
+}}
+.rs-bi-quote strong {{ color:var(--bi-color); }}
+
+/* INFO BAR */
+.rs-info-bar {{
+    margin:15px 0 13px; padding:11px 15px;
+    border:1px solid rgba(255,255,255,.13); border-radius:14px;
+    background:rgba(255,255,255,.07); color:#D8DDF0;
+    font-size:.73rem; box-shadow:0 8px 24px rgba(0,0,0,.12);
+    backdrop-filter:blur(15px);
+}}
+
+/* ============================================================
+   SENTIMENT BREAKDOWN — VISUAL, COMPACT & PREMIUM
+   ============================================================ */
+.rs-sentiment-card {{
+    --sentiment:#FF5A9D;
+    --sentiment-soft:rgba(255,90,157,.12);
+    --sentiment-glow:rgba(255,90,157,.25);
+    position:relative; overflow:hidden; min-height:205px;
+    padding:17px 16px 15px; border-radius:19px;
+    background:linear-gradient(145deg,rgba(255,255,255,.105),rgba(255,255,255,.035));
+    border:1px solid rgba(255,255,255,.13);
+    box-shadow:0 12px 30px rgba(0,0,0,.18), inset 0 1px 0 rgba(255,255,255,.06);
+    backdrop-filter:blur(18px); -webkit-backdrop-filter:blur(18px);
+    transition:transform .22s ease,border-color .22s ease,box-shadow .22s ease;
+}}
+.rs-sentiment-card:hover {{
+    transform:translateY(-4px);
+    border-color:var(--sentiment);
+    box-shadow:0 16px 36px rgba(0,0,0,.25),0 0 22px var(--sentiment-glow);
+}}
+.rs-sentiment-card::before {{
+    content:""; position:absolute; left:0; right:0; top:0; height:4px;
+    background:var(--sentiment); box-shadow:0 0 13px var(--sentiment-glow);
+}}
+.rs-sentiment-card .label {{
+    min-height:36px; display:flex; align-items:center;
+    font-size:.75rem; line-height:1.2; font-weight:800; color:#E7EAF5;
+}}
+.rs-sentiment-card .visual-row {{
+    display:flex; align-items:center; gap:13px; margin-top:5px;
+}}
+.rs-sentiment-card .ring {{
+    width:72px; height:72px; flex:0 0 72px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    background:conic-gradient(var(--sentiment) var(--pct),rgba(255,255,255,.08) 0);
+    box-shadow:0 0 16px var(--sentiment-glow);
+}}
+.rs-sentiment-card .ring-inner {{
+    width:54px; height:54px; border-radius:50%;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    background:#11152F; border:1px solid rgba(255,255,255,.08);
+}}
+.rs-sentiment-card .ring-pct {{
+    font-size:.78rem; line-height:1; font-weight:900; color:#FFFFFF;
+}}
+.rs-sentiment-card .ring-small {{
+    margin-top:3px; font-size:.48rem; font-weight:700; color:#8990AD; text-transform:uppercase;
+}}
+.rs-sentiment-card .count-wrap {{ display:flex; flex-direction:column; min-width:0; }}
+.rs-sentiment-card .count {{
+    margin:0; font-size:1.62rem; line-height:1; font-weight:950; color:var(--sentiment);
+    text-shadow:0 0 13px var(--sentiment-glow);
+}}
+.rs-sentiment-card .count-label {{ margin-top:5px; font-size:.61rem; color:#929BB7; font-weight:650; }}
+.rs-sentiment-card .track {{
+    height:7px; margin-top:15px; border-radius:99px;
+    background:rgba(255,255,255,.08); overflow:hidden;
+}}
+.rs-sentiment-card .fill {{
+    height:100%; width:var(--pct); border-radius:99px;
+    background:var(--sentiment);
+    box-shadow:0 0 12px var(--sentiment-glow);
+}}
+.rs-sentiment-card .foot {{
+    display:flex; justify-content:space-between; align-items:center;
+    margin-top:7px; font-size:.58rem; color:#858DAA; font-weight:650;
+}}
+.rs-sentiment-card .foot strong {{ color:#E7EAF5; }}
+
+.rs-sentiment-card.strong-neg {{ --sentiment:#FF3D72; --sentiment-glow:rgba(255,61,114,.30); }}
+.rs-sentiment-card.neg {{ --sentiment:#FF963D; --sentiment-glow:rgba(255,150,61,.28); }}
+.rs-sentiment-card.mixed {{ --sentiment:#FFC83D; --sentiment-glow:rgba(255,200,61,.25); }}
+.rs-sentiment-card.pos {{ --sentiment:#35D07F; --sentiment-glow:rgba(53,208,127,.28); }}
+.rs-sentiment-card.strong-pos {{ --sentiment:#20C7B5; --sentiment-glow:rgba(32,199,181,.28); }}
+
+/* BUTTONS */
+div.stButton > button {{
+    border-radius:15px !important;
+    border:1px solid rgba(255,255,255,.13) !important;
+    background:rgba(255,255,255,.075) !important;
+    color:#E8EBF7 !important; font-weight:700 !important;
+    min-height:70px !important; box-shadow:0 8px 22px rgba(0,0,0,.14);
+    white-space:pre-line !important; backdrop-filter:blur(14px);
+    transition:all .18s ease !important;
+}}
+
+div.stButton > button:hover {{
+    border-color:#FF4F99 !important; background:rgba(255,61,141,.12) !important;
+    color:#FFFFFF !important; transform:translateY(-2px);
+}}
+
+/* CHARTS */
+.rs-chart-shell {{ padding:5px 0 0; }}
+
+.rs-chart-head {{
+    display:flex; align-items:center; gap:8px; margin:0 0 5px 3px;
+    padding:11px 13px; border-radius:15px 15px 0 0;
+}}
+
+.rs-chart-icon {{
+    display:flex; align-items:center; justify-content:center;
+    width:29px; height:29px; border-radius:9px;
+    background:rgba(255,61,141,.12); border:1px solid rgba(255,61,141,.16);
+    color:#FF5A9D; font-size:15px;
+}}
+
+.rs-chart-title {{ font-size:.84rem; font-weight:800; color:#EEF1FB; }}
+
+div[data-testid="stPlotlyChart"],
+.stPlotlyChart {{
+    background:linear-gradient(145deg,rgba(13,18,42,.76),rgba(10,14,34,.62)) !important;
+    border:1px solid rgba(255,255,255,.13) !important;
+    border-radius:0 0 17px 17px !important;
+    padding:7px 8px 2px !important;
+    box-shadow:0 12px 32px rgba(0,0,0,.20) !important;
+    overflow:hidden;
+}}
+
+.js-plotly-plot {{ background:transparent !important; }}
+
+/* QUICK ANALYZE */
+.rs-quick {{ margin-top:18px; padding:18px; border-radius:20px; }}
+.rs-quick-title {{ font-size:1.1rem; font-weight:820; color:#FFFFFF; }}
+.rs-quick-sub {{ margin-top:4px; font-size:.73rem; color:#AEB6D4; }}
+
+textarea, input {{
+    background:rgba(7,11,31,.52) !important; color:#F7F8FF !important;
+    border:1px solid rgba(255,255,255,.14) !important; border-radius:13px !important;
+}}
+
+textarea::placeholder, input::placeholder {{ color:#8F98B8 !important; }}
+
+[data-baseweb="select"] > div {{
+    background:rgba(7,11,31,.52) !important; color:#FFFFFF !important;
+    border-radius:13px !important; border:1px solid rgba(255,255,255,.14) !important;
+}}
+
+/* PREMIUM FILE UPLOAD */
+.rs-upload-card {{
+    position:relative;
+    padding:18px 18px 14px;
+    margin-top:2px;
+    border-radius:20px;
+    background:linear-gradient(145deg,rgba(255,255,255,.075),rgba(255,255,255,.025));
+    border:1px solid rgba(255,255,255,.13);
+    box-shadow:0 14px 34px rgba(0,0,0,.18);
+}}
+
+.rs-upload-head {{
+    display:flex; align-items:center; gap:12px; margin-bottom:5px;
+}}
+
+.rs-upload-icon {{
+    width:42px; height:42px; border-radius:13px;
+    display:flex; align-items:center; justify-content:center;
+    background:linear-gradient(135deg,rgba(255,61,141,.20),rgba(155,108,255,.20));
+    border:1px solid rgba(255,255,255,.12);
+    box-shadow:0 8px 20px rgba(255,61,141,.12);
+    font-size:20px;
+}}
+
+.rs-upload-title {{ font-size:1rem; font-weight:850; color:#F5F7FF; }}
+.rs-upload-sub {{ margin:2px 0 0 54px; font-size:.70rem; color:#9EA7C5; }}
+
+.rs-upload-formats {{
+    display:flex; gap:7px; flex-wrap:wrap; margin:12px 0 3px 54px;
+}}
+
+.rs-file-chip {{
+    padding:4px 8px; border-radius:999px;
+    font-size:.62rem; font-weight:800; color:#CBD2E8;
+    background:rgba(255,255,255,.055);
+    border:1px solid rgba(255,255,255,.10);
+}}
+
+[data-testid="stFileUploader"] {{
+    background:transparent !important;
+    border:none !important;
+    padding:0 !important;
+    margin:8px 0 0 !important;
+}}
+
+[data-testid="stFileUploaderDropzone"] {{
+    min-height:118px !important;
+    padding:15px !important;
+    border-radius:15px !important;
+    background:rgba(7,11,31,.38) !important;
+    border:1px dashed rgba(255,255,255,.22) !important;
+    transition:all .18s ease !important;
+}}
+
+[data-testid="stFileUploaderDropzone"]:hover {{
+    border-color:rgba(255,61,141,.55) !important;
+    background:rgba(255,61,141,.055) !important;
+    box-shadow:inset 0 0 0 1px rgba(255,61,141,.08), 0 8px 24px rgba(255,61,141,.08) !important;
+}}
+
+[data-testid="stFileUploaderDropzoneInstructions"] {{
+    color:#AEB6D4 !important;
+}}
+
+[data-testid="stFileUploaderDropzoneInstructions"] span {{
+    color:#DDE2F2 !important; font-weight:700 !important;
+}}
+
+[data-testid="stFileUploaderDropzone"] button {{
+    border-radius:10px !important;
+    border:1px solid rgba(255,255,255,.16) !important;
+    background:linear-gradient(135deg,#FF3D8D,#C94EFF) !important;
+    color:white !important;
+    font-weight:800 !important;
+}}
+
+.rs-upload-success {{
+    margin-top:10px; padding:9px 11px; border-radius:11px;
+    background:rgba(53,208,127,.09);
+    border:1px solid rgba(53,208,127,.18);
+    color:#83E8AE; font-size:.72rem; font-weight:750;
+}}
+
+button[kind="primary"] {{
+    background:linear-gradient(135deg,#FF3D8D,#C94EFF) !important;
+    color:white !important; border:none !important;
+    box-shadow:0 9px 26px rgba(255,61,141,.28) !important;
+}}
+
+/* BATCH SUMMARY */
+.rs-batch-summary {{
+    margin-top:12px; padding:14px 17px; border-radius:15px;
+    background:rgba(53,208,127,.10); border:1px solid rgba(53,208,127,.22);
+    color:#72E6A5; font-size:.86rem; font-weight:650;
+}}
+
+/* REVIEW PANELS */
+.rs-review-panel {{ padding:17px; border-radius:18px; }}
+.rs-review-panel.positive {{ border-top:4px solid #35D07F !important; }}
+.rs-review-panel.negative {{ border-top:4px solid #FF5570 !important; }}
+
+.rs-review-title {{
+    display:flex; align-items:center; gap:8px; font-size:1.02rem;
+    font-weight:820; color:#FFFFFF; margin-bottom:11px;
+}}
+
+.rs-review-title .badge {{
+    padding:4px 8px; border-radius:999px; font-size:.68rem; font-weight:800;
+}}
+
+.rs-review-title .badge.green {{ color:#6EE7A0; background:rgba(53,208,127,.12); }}
+.rs-review-title .badge.red {{ color:#FF8A9C; background:rgba(255,85,112,.12); }}
+
+.rs-review-item {{
+    padding:12px 13px; margin-top:8px; border-radius:12px;
+    background:rgba(255,255,255,.055); border:1px solid rgba(255,255,255,.09);
+    color:#CDD3E6; font-size:.82rem; line-height:1.55;
+}}
+
+.rs-review-score {{
+    margin-bottom:4px; font-size:.68rem; font-weight:800; color:#929BB7;
+    text-transform:uppercase; letter-spacing:.04em;
+}}
+
+/* THEMES */
+.rs-theme-panel {{ margin-top:14px; padding:15px 17px; border-radius:16px; }}
+
+.rs-theme-title {{
+    font-size:.76rem; font-weight:800; color:#AEB6D4;
+    text-transform:uppercase; letter-spacing:.05em; margin-bottom:9px;
+}}
+
+.rs-theme-chip {{
+    display:inline-block; margin:3px 5px 3px 0; padding:6px 9px;
+    border-radius:999px; font-size:.72rem; font-weight:700;
+}}
+
+.rs-theme-chip.green {{
+    color:#6EE7A0; background:rgba(53,208,127,.12);
+    border:1px solid rgba(53,208,127,.16);
+}}
+
+.rs-theme-chip.red {{
+    color:#FF8A9C; background:rgba(255,85,112,.12);
+    border:1px solid rgba(255,85,112,.16);
+}}
+
+/* HIGHLIGHTS */
+.hl {{
+    display:inline-block; padding:2px 6px; border-radius:6px;
+    font-weight:700; color:#FFFFFF !important;
+}}
+.hl-pos {{ background:#35B978; box-shadow:0 2px 8px rgba(53,185,120,.20); }}
+.hl-neg {{ background:#E84B62; box-shadow:0 2px 8px rgba(232,75,98,.20); }}
+
+/* ALERTS / TABLES */
+[data-testid="stAlert"] {{
+    border-radius:14px !important; background:rgba(255,255,255,.08) !important;
+    border:1px solid rgba(255,255,255,.12) !important; color:#E7EAF5 !important;
+}}
+
+[data-testid="stDataFrame"] {{ border-radius:15px !important; overflow:hidden !important; }}
+
+/* SCROLLBAR */
+::-webkit-scrollbar {{ width:8px; }}
+::-webkit-scrollbar-track {{ background:#070B1F; }}
+::-webkit-scrollbar-thumb {{
+    background:linear-gradient(#FF3D8D,#9B6CFF); border-radius:10px;
+}}
+
+</style>
+""", unsafe_allow_html=True)
 
 
 # LOAD MODEL + REPORTS
@@ -117,8 +758,15 @@ if df_compare.empty:
 
 
 # HEADER + MODE
-st.title("💬 ReviewSense")
-st.caption("A customer-ready review intelligence dashboard")
+st.markdown("""
+<div class="rs-hero">
+    <div class="rs-hero-row">
+        <div class="rs-hero-icon">💬</div>
+        <div class="rs-hero-title">Welcome to Review<span>Sense</span></div>
+    </div>
+    <div class="rs-hero-subtitle">A customer-ready review intelligence dashboard</div>
+</div>
+""", unsafe_allow_html=True)
 
 # Keep mode in session_state (safer)
 st.session_state.mode = st.radio("🧠 Explanation Mode", ["Simple Language", "Technical"], horizontal=True)
@@ -603,30 +1251,125 @@ def safe_textcol_from_batch(df):
 
 
 # Charts (compact + interactive)
+def _bucket_colors():
+    return {
+        "Strongly Negative 😡": "#E83E7B",
+        "Negative 🙁": "#FF963F",
+        "Mixed 😐": "#FFC21C",
+        "Positive 🙂": "#43B978",
+        "Strongly Positive 😍": "#22B8A8",
+    }
+
+
 def donut_bucket_distribution(df, bucket_col="bucket"):
     if df.empty or bucket_col not in df.columns:
-        return px.pie(pd.DataFrame({"Bucket": [], "Count": []}), names="Bucket", values="Count", hole=0.68, height=300)
-    counts = df[bucket_col].value_counts().reindex(BUCKET_ORDER).fillna(0).astype(int).reset_index()
+        return px.pie(
+            pd.DataFrame({"Bucket": [], "Count": []}),
+            names="Bucket", values="Count", hole=0.68, height=300
+        )
+
+    counts = (
+        df[bucket_col]
+        .value_counts()
+        .reindex(BUCKET_ORDER)
+        .fillna(0)
+        .astype(int)
+        .reset_index()
+    )
     counts.columns = ["Bucket", "Count"]
-    fig = px.pie(counts, names="Bucket", values="Count", hole=0.68, height=300)
-    fig.update_layout(margin=dict(t=10, b=10, l=10, r=10), legend_title_text="")
-    return fig
+    colors = _bucket_colors()
+
+    fig = px.pie(
+        counts,
+        names="Bucket",
+        values="Count",
+        hole=0.68,
+        height=300,
+        color="Bucket",
+        color_discrete_map=colors,
+    )
+    fig.update_traces(
+        textposition="inside",
+        textinfo="percent",
+        marker=dict(line=dict(color="rgba(255,255,255,.9)", width=2)),
+        hovertemplate="<b>%{label}</b><br>%{value:,} reviews<br>%{percent}<extra></extra>",
+    )
+    fig.update_layout(
+        margin=dict(t=5, b=5, l=5, r=5),
+        legend_title_text="",
+        legend=dict(font=dict(size=11)),
+    )
+    return style_plotly_fig(fig)
+
 
 def bar_bucket_distribution(df, bucket_col="bucket"):
     if df.empty or bucket_col not in df.columns:
-        return px.bar(pd.DataFrame({"Bucket": [], "Count": []}), x="Bucket", y="Count", height=270)
-    counts = df[bucket_col].value_counts().reindex(BUCKET_ORDER).fillna(0).astype(int)
+        return px.bar(
+            pd.DataFrame({"Bucket": [], "Count": []}),
+            x="Bucket", y="Count", height=300
+        )
+
+    counts = (
+        df[bucket_col]
+        .value_counts()
+        .reindex(BUCKET_ORDER)
+        .fillna(0)
+        .astype(int)
+    )
     chart_df = pd.DataFrame({"Bucket": counts.index, "Count": counts.values})
-    fig = px.bar(chart_df, x="Bucket", y="Count", height=270)
-    fig.update_layout(margin=dict(t=10, b=10, l=10, r=10), xaxis_title=None, yaxis_title=None)
-    return fig
+    colors = _bucket_colors()
+
+    fig = px.bar(
+        chart_df,
+        x="Bucket",
+        y="Count",
+        height=300,
+        color="Bucket",
+        color_discrete_map=colors,
+        text="Count",
+    )
+    fig.update_traces(
+        textposition="outside",
+        cliponaxis=False,
+        hovertemplate="<b>%{x}</b><br>%{y:,} reviews<extra></extra>",
+    )
+    fig.update_layout(
+        showlegend=False,
+        margin=dict(t=20, b=45, l=10, r=10),
+        xaxis_title=None,
+        yaxis_title=None,
+    )
+    return style_plotly_fig(fig)
+
 
 def confidence_hist(df, proba_col="proba_pos"):
     if df.empty or proba_col not in df.columns:
-        return px.histogram(pd.DataFrame({proba_col: []}), x=proba_col, nbins=30, height=270)
-    fig = px.histogram(df, x=proba_col, nbins=30, height=270)
-    fig.update_layout(margin=dict(t=10, b=10, l=10, r=10), xaxis_title="P(Positive)", yaxis_title=None)
-    return fig
+        return px.histogram(
+            pd.DataFrame({proba_col: []}),
+            x=proba_col, nbins=30, height=300
+        )
+
+    fig = px.histogram(
+        df,
+        x=proba_col,
+        nbins=30,
+        height=300,
+        color_discrete_sequence=["#8B5CF6"],
+    )
+    fig.update_traces(
+        marker=dict(
+            color="#8B5CF6",
+            line=dict(color="rgba(255,255,255,.45)", width=0.5)
+        ),
+        hovertemplate="P(Positive): %{x:.2f}<br>Reviews: %{y:,}<extra></extra>",
+    )
+    fig.update_layout(
+        margin=dict(t=10, b=35, l=10, r=10),
+        xaxis_title="P(Positive)",
+        yaxis_title=None,
+    )
+    return style_plotly_fig(fig)
+
 
 def kw_bar(kws, height=320, title=None):
     if not kws:
@@ -634,7 +1377,7 @@ def kw_bar(kws, height=320, title=None):
     dfk = pd.DataFrame(kws, columns=["Keyword", "Mentions"])
     fig = px.bar(dfk, x="Mentions", y="Keyword", orientation="h", height=height)
     fig.update_layout(margin=dict(t=10, b=10, l=10, r=10), yaxis_title=None, xaxis_title=None, title=title)
-    return fig
+    return style_plotly_fig(fig)
 
 # NAVIGATION STATE
 if "page" not in st.session_state:
@@ -652,12 +1395,31 @@ pages = [
     "Tricky Reviews",
     "Trust & Reliability",
 ]
-st.sidebar.title("🧭 Navigation")
+st.sidebar.markdown("""
+<div class="rs-side-brand">
+    <div class="rs-side-logo">•••</div>
+    <div class="rs-side-brand-name">Review<span>Sense</span></div>
+</div>
+<div class="rs-side-caption">AI Review Intelligence</div>
+<div class="rs-nav-label">Navigation</div>
+""", unsafe_allow_html=True)
+
 st.session_state.page = st.sidebar.radio("Go to", pages, index=pages.index(st.session_state.page))
+
+st.sidebar.markdown("""
+<div class="rs-side-info">
+    <div class="rs-side-info-title">🧠 Explanation Mode</div>
+    <div class="rs-side-info-text">Switch between simple customer-friendly explanations and technical model insights.</div>
+</div>
+<div class="rs-side-info">
+    <div class="rs-side-info-title">✨ About ReviewSense</div>
+    <div class="rs-side-info-text">Understand customer reviews with AI-powered sentiment insights 💕</div>
+</div>
+""", unsafe_allow_html=True)
 
 # PAGE: OVERVIEW
 if st.session_state.page == "Overview":
-    st.subheader("📊 Overview")
+    st.markdown('<div class="rs-section"><div class="rs-section-icon">📊</div><span class="rs-section-title">Overview</span></div>', unsafe_allow_html=True)
 
     if df_errors.empty:
         st.info(
@@ -673,23 +1435,20 @@ if st.session_state.page == "Overview":
     k1, k2, k3, k4 = st.columns(4)
     with k1:
         st.markdown(
-            f"<div class='rs-card'><div class='rs-title'>Total Reviews</div>"
-            f"<div class='rs-kpi'>{total:,}</div>"
-            f"<div class='rs-sub'>Baseline evaluation set</div></div>",
+            f"<div class='rs-kpi-card'><div class='rs-kpi-icon pink'>💬</div><div><div class='rs-kpi-label'>Total Reviews</div>"
+            f"<div class='rs-kpi-value'>{total:,}</div><div class='rs-kpi-sub'>Baseline evaluation set</div></div></div>",
             unsafe_allow_html=True
         )
     with k2:
         st.markdown(
-            f"<div class='rs-card'><div class='rs-title'>Positive Rate</div>"
-            f"<div class='rs-kpi'>{pos_rate*100:.1f}%</div>"
-            f"<div class='rs-sub'>From true labels</div></div>",
+            f"<div class='rs-kpi-card'><div class='rs-kpi-icon green'>☺</div><div><div class='rs-kpi-label'>Positive Rate</div>"
+            f"<div class='rs-kpi-value green'>{pos_rate*100:.1f}%</div><div class='rs-kpi-sub'>From true labels</div></div></div>",
             unsafe_allow_html=True
         )
     with k3:
         st.markdown(
-            f"<div class='rs-card'><div class='rs-title'>Negative Rate</div>"
-            f"<div class='rs-kpi'>{neg_rate*100:.1f}%</div>"
-            f"<div class='rs-sub'>From true labels</div></div>",
+            f"<div class='rs-kpi-card'><div class='rs-kpi-icon red'>☹</div><div><div class='rs-kpi-label'>Negative Rate</div>"
+            f"<div class='rs-kpi-value red'>{neg_rate*100:.1f}%</div><div class='rs-kpi-sub'>From true labels</div></div></div>",
             unsafe_allow_html=True
         )
     with k4:
@@ -697,15 +1456,14 @@ if st.session_state.page == "Overview":
         val = "High" if st.session_state.mode == "Simple Language" else (f"{best_f1:.4f}" if best_f1 is not None else "N/A")
         sub = explain("Consistency of predictions", "Top-ranked model")
         st.markdown(
-            f"<div class='rs-card'><div class='rs-title'>{label}</div>"
-            f"<div class='rs-kpi'>{val}</div>"
-            f"<div class='rs-sub'>{sub}</div></div>",
+            f"<div class='rs-kpi-card'><div class='rs-kpi-icon purple'>✓</div><div><div class='rs-kpi-label'>{label}</div>"
+            f"<div class='rs-kpi-value purple'>{val}</div><div class='rs-kpi-sub'>{sub}</div></div></div>",
             unsafe_allow_html=True
         )
 
-    st.caption("Scroll down for ⚡ Quick Analyze (type a review or upload a file).")
+    st.markdown('<div class="rs-info-bar">⚡ <b>Quick Analyze</b> — type a review or upload a file to get instant sentiment insights.</div>', unsafe_allow_html=True)
 
-    st.markdown("### Sentiment Breakdown (5 Levels)")
+    st.markdown('<div class="rs-section"><div class="rs-section-icon">◔</div><span class="rs-section-title">Sentiment Breakdown</span><span class="rs-section-sub">5 Levels</span></div>', unsafe_allow_html=True)
     st.caption(explain(
         "Click any category to explore examples and understand what drives it.",
         "Buckets are based on calibrated probability ranges."
@@ -717,11 +1475,22 @@ if st.session_state.page == "Overview":
         bucket_counts = pd.Series({b: 0 for b in BUCKET_ORDER})
 
     card_cols = st.columns(5)
+    overview_classes = [
+        ("strong-neg", "Strongly Negative 😡"),
+        ("neg", "Negative 🙁"),
+        ("mixed", "Mixed 😐"),
+        ("pos", "Positive 🙂"),
+        ("strong-pos", "Strongly Positive 😍"),
+    ]
+
     for i, bucket_name in enumerate(BUCKET_ORDER):
         with card_cols[i]:
             count = int(bucket_counts.get(bucket_name, 0))
             pct = (count / total) * 100 if total else 0
-            if st.button(f"{bucket_name}\n\n{count:,} ({pct:.1f}%)", use_container_width=True, disabled=(total == 0)):
+            cls, label = overview_classes[i]
+            st.markdown(render_sentiment_card_html(cls, label, count, pct), unsafe_allow_html=True)
+
+            if st.button("Explore →", key=f"overview_sentiment_{i}", use_container_width=True, disabled=(total == 0)):
                 st.session_state.selected_bucket = bucket_name
                 st.session_state.page = "Category Details"
                 st.rerun()
@@ -729,20 +1498,24 @@ if st.session_state.page == "Overview":
     c1, c2, c3 = st.columns([1.1, 1.2, 1.2])
 
     with c1:
-        st.markdown("<div class='rs-card'><div class='rs-title'>Distribution</div></div>", unsafe_allow_html=True)
+        st.markdown("<div class='rs-chart-head'><div class='rs-chart-icon'>◔</div><div class='rs-chart-title'>Distribution</div></div>", unsafe_allow_html=True)
         st.plotly_chart(donut_bucket_distribution(df_errors), use_container_width=True)
 
     with c2:
-        st.markdown("<div class='rs-card'><div class='rs-title'>Counts by Category</div></div>", unsafe_allow_html=True)
+        st.markdown("<div class='rs-chart-head'><div class='rs-chart-icon'>▥</div><div class='rs-chart-title'>Counts by Category</div></div>", unsafe_allow_html=True)
         st.plotly_chart(bar_bucket_distribution(df_errors), use_container_width=True)
 
     with c3:
-        st.markdown("<div class='rs-card'><div class='rs-title'>Confidence Spread</div></div>", unsafe_allow_html=True)
+        st.markdown("<div class='rs-chart-head'><div class='rs-chart-icon'>♧</div><div class='rs-chart-title'>Confidence Spread</div></div>", unsafe_allow_html=True)
         st.plotly_chart(confidence_hist(df_errors), use_container_width=True)
 
     # Quick Analyze
-    st.markdown("---")
-    st.markdown("### ⚡ Quick Analyze (Type anything or Upload anything)")
+    st.markdown("""
+    <div class="rs-quick">
+        <div class="rs-quick-title">⚡ Quick Analyze a Review</div>
+        <div class="rs-quick-sub">Type a customer review below to get instant sentiment prediction and explanation.</div>
+    </div>
+    """, unsafe_allow_html=True)
     st.caption(explain(
         "Analyze a single review or upload a file to get instant insights.",
         "Supports CSV / TSV / XLSX with automatic column detection."
@@ -754,7 +1527,39 @@ if st.session_state.page == "Overview":
         review_text = st.text_area("Single review", height=120, placeholder="Paste any customer review here…")
 
     with qa2:
-        uploaded = st.file_uploader("Upload file (CSV / TSV / XLSX)", type=["csv", "tsv", "xlsx"])
+        st.markdown(
+            """
+            <div class="rs-upload-card">
+                <div class="rs-upload-head">
+                    <div class="rs-upload-icon">☁️</div>
+                    <div>
+                        <div class="rs-upload-title">Upload your review dataset</div>
+                    </div>
+                </div>
+                <div class="rs-upload-sub">Drop a file here or browse from your computer</div>
+                <div class="rs-upload-formats">
+                    <span class="rs-file-chip">CSV</span>
+                    <span class="rs-file-chip">TSV</span>
+                    <span class="rs-file-chip">XLSX</span>
+                    <span class="rs-file-chip">Up to 200 MB</span>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+        uploaded = st.file_uploader(
+            "Upload review dataset",
+            type=["csv", "tsv", "xlsx"],
+            label_visibility="collapsed",
+            help="Upload a CSV, TSV, or XLSX containing customer reviews."
+        )
+        if uploaded is not None:
+            st.markdown(
+                f'<div class="rs-upload-success">✓ {uploaded.name} ready for analysis</div>',
+                unsafe_allow_html=True
+            )
+
+        st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
         threshold = st.slider(explain("Sensitivity", "Decision threshold"), 0.1, 0.9, 0.5, 0.05)
 
     run = st.button("Run Analysis", use_container_width=True)
@@ -921,7 +1726,12 @@ elif st.session_state.page == "Category Details":
 
 # PAGE: BATCH RESULTS
 elif st.session_state.page == "Batch Results":
-    st.subheader("📦 Batch Results (Uploaded File)")
+    st.markdown(
+        '<div class="rs-section"><div class="rs-section-icon">📦</div>'
+        '<span class="rs-section-title">Batch Results</span>'
+        '<span class="rs-section-sub">Uploaded file analysis</span></div>',
+        unsafe_allow_html=True
+    )
 
     out = st.session_state.batch_df
     if out is None or len(out) == 0:
@@ -934,49 +1744,235 @@ elif st.session_state.page == "Batch Results":
         st.stop()
 
     total = len(out)
-    pct_pos = float((out["bucket"].isin(["Strongly Positive 😍", "Positive 🙂"])).mean()) * 100
-    pct_neg = float((out["bucket"].isin(["Strongly Negative 😡", "Negative 🙁"])).mean()) * 100
-    pct_mix = float((out["bucket"] == "Mixed 😐").mean()) * 100
 
-    avg_conf = float(out["confidence"].mean())
-    high_risk = out[(out["bucket"] == "Strongly Negative 😡") & (out["confidence"] >= 0.7)]
-    high_praise = out[(out["bucket"] == "Strongly Positive 😍") & (out["confidence"] >= 0.7)]
-
-    k1, k2, k3, k4 = st.columns(4)
-    with k1:
-        st.markdown(
-            f"<div class='rs-card'><div class='rs-title'>Rows analyzed</div>"
-            f"<div class='rs-kpi'>{total:,}</div><div class='rs-sub'>Uploaded dataset</div></div>",
-            unsafe_allow_html=True
-        )
-    with k2:
-        st.markdown(
-            f"<div class='rs-card'><div class='rs-title'>Positive</div>"
-            f"<div class='rs-kpi'>{pct_pos:.1f}%</div><div class='rs-sub'>Satisfied customers</div></div>",
-            unsafe_allow_html=True
-        )
-    with k3:
-        st.markdown(
-            f"<div class='rs-card'><div class='rs-title'>Negative</div>"
-            f"<div class='rs-kpi'>{pct_neg:.1f}%</div><div class='rs-sub'>Customer pain points</div></div>",
-            unsafe_allow_html=True
-        )
-    with k4:
-        st.markdown(
-            f"<div class='rs-card'><div class='rs-title'>{explain('Avg confidence', 'Avg confidence (0..1)')}</div>"
-            f"<div class='rs-kpi'>{avg_conf:.2f}</div><div class='rs-sub'>Higher = more reliable</div></div>",
-            unsafe_allow_html=True
-        )
-
-    st.success(
-        explain(
-            f"Summary: {pct_pos:.1f}% positive, {pct_neg:.1f}% negative, {pct_mix:.1f}% mixed. "
-            f"High-risk unhappy reviews: {len(high_risk):,}.",
-            f"pos={pct_pos:.1f}% | neg={pct_neg:.1f}% | mixed={pct_mix:.1f}% | high_risk={len(high_risk)}"
-        )
+    # Exact counts from the model's 5-level prediction buckets.
+    bucket_counts = (
+        out["bucket"].value_counts()
+        .reindex(BUCKET_ORDER)
+        .fillna(0)
+        .astype(int)
     )
 
-    st.markdown("---")
+    strongly_neg = int(bucket_counts["Strongly Negative 😡"])
+    negative = int(bucket_counts["Negative 🙁"])
+    mixed = int(bucket_counts["Mixed 😐"])
+    positive = int(bucket_counts["Positive 🙂"])
+    strongly_pos = int(bucket_counts["Strongly Positive 😍"])
+
+    neg_count = strongly_neg + negative
+    pos_count = positive + strongly_pos
+
+    pct_pos = (pos_count / total * 100) if total else 0
+    pct_neg = (neg_count / total * 100) if total else 0
+    pct_mix = (mixed / total * 100) if total else 0
+    avg_conf = float(out["confidence"].mean()) if "confidence" in out.columns else 0.0
+
+    # High-confidence examples are used only for the review showcase.
+    high_risk = out[
+        (out["bucket"].isin(["Strongly Negative 😡", "Negative 🙁"]))
+        & (out["confidence"] >= 0.70)
+    ].copy()
+
+    high_praise = out[
+        (out["bucket"].isin(["Strongly Positive 😍", "Positive 🙂"]))
+        & (out["confidence"] >= 0.70)
+    ].copy()
+
+    # ======================================================
+    # 1. EXECUTIVE SUMMARY — exact numbers
+    # ======================================================
+    k1, k2, k3, k4 = st.columns(4)
+
+    kpi_data = [
+        ("💬", "Total Reviews", f"{total:,}", "Reviews analyzed", "pink"),
+        ("☺", "Positive Reviews", f"{pos_count:,}", f"{pct_pos:.1f}% of all reviews", "green"),
+        ("☹", "Negative Reviews", f"{neg_count:,}", f"{pct_neg:.1f}% of all reviews", "red"),
+        ("✓", "Mixed Reviews", f"{mixed:,}", f"{pct_mix:.1f}% of all reviews", "purple"),
+    ]
+
+    for col, (icon, label, value, sub, tone) in zip([k1, k2, k3, k4], kpi_data):
+        with col:
+            st.markdown(
+                f"""
+                <div class="rs-kpi-card">
+                    <div class="rs-kpi-icon {tone}">{icon}</div>
+                    <div>
+                        <div class="rs-kpi-label">{label}</div>
+                        <div class="rs-kpi-value">{value}</div>
+                        <div class="rs-kpi-sub">{sub}</div>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
+    st.markdown(
+        f"""
+        <div class="rs-batch-summary">
+            <b>📊 Dataset Summary</b>
+            &nbsp; {total:,} reviews analyzed
+            &nbsp; • &nbsp; <span style="color:#18743b"><b>{pos_count:,}</b> positive ({pct_pos:.1f}%)</span>
+            &nbsp; • &nbsp; <span style="color:#b52c45"><b>{neg_count:,}</b> negative ({pct_neg:.1f}%)</span>
+            &nbsp; • &nbsp; <b>{mixed:,}</b> mixed ({pct_mix:.1f}%)
+            &nbsp; • &nbsp; Average confidence <b>{avg_conf:.2f}</b>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    # ======================================================
+    # 2. 5-LEVEL SENTIMENT CARDS
+    # ======================================================
+    st.markdown(
+        '<div class="rs-section"><div class="rs-section-icon">📊</div>'
+        '<span class="rs-section-title">Sentiment Breakdown</span>'
+        '<span class="rs-section-sub">5 prediction levels</span></div>',
+        unsafe_allow_html=True
+    )
+
+    sentiment_cards = [
+        ("strong-neg", "Strongly Negative 😡", strongly_neg),
+        ("neg", "Negative 🙁", negative),
+        ("mixed", "Mixed 😐", mixed),
+        ("pos", "Positive 🙂", positive),
+        ("strong-pos", "Strongly Positive 😍", strongly_pos),
+    ]
+
+    cols = st.columns(5)
+    for col, (cls, label, count) in zip(cols, sentiment_cards):
+        pct = count / total * 100 if total else 0
+        with col:
+            st.markdown(render_sentiment_card_html(cls, label, count, pct), unsafe_allow_html=True)
+
+    # ======================================================
+    # 3. COLOURED CHARTS
+    # ======================================================
+    c1, c2, c3 = st.columns([1.05, 1.12, 1.12])
+
+    with c1:
+        st.markdown(
+            '<div class="rs-chart-head"><div class="rs-chart-icon">◔</div>'
+            '<div class="rs-chart-title">Distribution</div></div>',
+            unsafe_allow_html=True
+        )
+        st.plotly_chart(
+            donut_bucket_distribution(out, bucket_col="bucket"),
+            use_container_width=True,
+            key="batch_donut"
+        )
+
+    with c2:
+        st.markdown(
+            '<div class="rs-chart-head"><div class="rs-chart-icon">▥</div>'
+            '<div class="rs-chart-title">Counts by Category</div></div>',
+            unsafe_allow_html=True
+        )
+        st.plotly_chart(
+            bar_bucket_distribution(out, bucket_col="bucket"),
+            use_container_width=True,
+            key="batch_bar"
+        )
+
+    with c3:
+        st.markdown(
+            '<div class="rs-chart-head"><div class="rs-chart-icon">♧</div>'
+            '<div class="rs-chart-title">Confidence Spread</div></div>',
+            unsafe_allow_html=True
+        )
+        st.plotly_chart(
+            confidence_hist(out, proba_col="proba_pos"),
+            use_container_width=True,
+            key="batch_confidence"
+        )
+
+    st.markdown('<div class="rs-batch-divider"></div>', unsafe_allow_html=True)
+
+    # ======================================================
+    # 4. POSITIVE / NEGATIVE REVIEW SHOWCASE
+    # ======================================================
+    st.markdown(
+        '<div class="rs-section"><div class="rs-section-icon">💬</div>'
+        '<span class="rs-section-title">Customer Reviews</span>'
+        '<span class="rs-section-sub">High-confidence examples from your uploaded dataset</span></div>',
+        unsafe_allow_html=True
+    )
+
+    review_left, review_right = st.columns(2)
+
+    with review_left:
+        st.markdown(
+            '<div class="rs-review-panel positive">'
+            '<div class="rs-review-title">🟢 Positive Reviews '
+            '<span class="badge green">CUSTOMERS LOVE IT</span></div>',
+            unsafe_allow_html=True
+        )
+
+        positive_examples = (
+            high_praise.sort_values("proba_pos", ascending=False).head(3)
+            if not high_praise.empty else
+            out[out["bucket"].isin(["Strongly Positive 😍", "Positive 🙂"])]
+            .sort_values("proba_pos", ascending=False).head(3)
+        )
+
+        if positive_examples.empty:
+            st.info("No positive reviews available.")
+        else:
+            for _, row in positive_examples.iterrows():
+                review_text = str(row[text_col_used]).strip()
+                review_text = review_text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                score = float(row["proba_pos"])
+                st.markdown(
+                    f'<div class="rs-review-item">'
+                    f'<div class="rs-review-score">Positive score {score:.2f}</div>'
+                    f'{review_text[:420]}'
+                    f'{"..." if len(review_text) > 420 else ""}'
+                    f'</div>',
+                    unsafe_allow_html=True
+                )
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    with review_right:
+        st.markdown(
+            '<div class="rs-review-panel negative">'
+            '<div class="rs-review-title">🔴 Negative Reviews '
+            '<span class="badge red">NEEDS ATTENTION</span></div>',
+            unsafe_allow_html=True
+        )
+
+        negative_examples = (
+            high_risk.sort_values("proba_pos", ascending=True).head(3)
+            if not high_risk.empty else
+            out[out["bucket"].isin(["Strongly Negative 😡", "Negative 🙁"])]
+            .sort_values("proba_pos", ascending=True).head(3)
+        )
+
+        if negative_examples.empty:
+            st.info("No negative reviews available.")
+        else:
+            for _, row in negative_examples.iterrows():
+                review_text = str(row[text_col_used]).strip()
+                review_text = review_text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                score = float(row["proba_pos"])
+                st.markdown(
+                    f'<div class="rs-review-item">'
+                    f'<div class="rs-review-score">Positive score {score:.2f} • negative signal</div>'
+                    f'{review_text[:420]}'
+                    f'{"..." if len(review_text) > 420 else ""}'
+                    f'</div>',
+                    unsafe_allow_html=True
+                )
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # ======================================================
+    # 5. TOP THEMES — COLOURED
+    # ======================================================
+    st.markdown(
+        '<div class="rs-section"><div class="rs-section-icon">🎯</div>'
+        '<span class="rs-section-title">What Customers Are Saying</span></div>',
+        unsafe_allow_html=True
+    )
 
     neg_texts = out[out["bucket"].isin(["Strongly Negative 😡", "Negative 🙁"])][text_col_used].astype(str).tolist()
     pos_texts = out[out["bucket"].isin(["Strongly Positive 😍", "Positive 🙂"])][text_col_used].astype(str).tolist()
@@ -984,67 +1980,50 @@ elif st.session_state.page == "Batch Results":
     top_pos_phrases, _ = extract_top_phrases_from_group(model, pos_texts, top_n=10)
     _, top_neg_phrases = extract_top_phrases_from_group(model, neg_texts, top_n=10)
 
-    cL, cR = st.columns(2)
-    with cL:
-        st.markdown("### ✅ Top Wins (what customers like)")
+    t1, t2 = st.columns(2)
+
+    with t1:
+        st.markdown(
+            '<div class="rs-theme-panel">'
+            '<div class="rs-theme-title">🟢 Top Positive Themes</div>',
+            unsafe_allow_html=True
+        )
         if top_pos_phrases:
-            chips = "".join([f"<span class='rs-chip'>{p}</span>" for p in top_pos_phrases[:8]])
-            st.markdown(f"<div class='rs-card'><div class='rs-sub'>Top praise themes</div>{chips}</div>", unsafe_allow_html=True)
-        else:
-            st.info("Not enough strong positive phrase signals.")
-
-        st.markdown("#### Example praise (high confidence)")
-        ex = high_praise.head(2)
-        for _, r in ex.iterrows():
-            txt = str(r[text_col_used])
-            p = float(r["proba_pos"])
-            pos_terms, neg_terms = explain_review_terms(model, txt, top_k_each=7)
-            pos_terms = filter_terms(pos_terms)
-            neg_terms = filter_terms(neg_terms)
-            st.markdown(
-                f"<div class='rs-card'><div class='rs-sub'>AI score: <b>{p:.3f}</b></div>"
-                f"<div style='margin-top:8px'>{highlight_terms_both(txt, pos_terms, neg_terms)}</div></div>",
-                unsafe_allow_html=True
+            chips = "".join(
+                f'<span class="rs-theme-chip green">{p}</span>'
+                for p in top_pos_phrases[:10]
             )
+            st.markdown(chips, unsafe_allow_html=True)
+        else:
+            st.caption("Not enough positive phrase signals.")
+        st.markdown("</div>", unsafe_allow_html=True)
 
-    with cR:
-        st.markdown("### ⚠️ Top Issues (what to fix first)")
+    with t2:
+        st.markdown(
+            '<div class="rs-theme-panel">'
+            '<div class="rs-theme-title">🔴 Top Complaint Themes</div>',
+            unsafe_allow_html=True
+        )
         if top_neg_phrases:
-            chips = "".join([f"<span class='rs-chip'>{p}</span>" for p in top_neg_phrases[:8]])
-            st.markdown(f"<div class='rs-card'><div class='rs-sub'>Top complaint themes</div>{chips}</div>", unsafe_allow_html=True)
-        else:
-            st.info("Not enough strong negative phrase signals.")
-
-        st.markdown("#### Example complaint (high confidence)")
-        ex = high_risk.head(2)
-        for _, r in ex.iterrows():
-            txt = str(r[text_col_used])
-            p = float(r["proba_pos"])
-            pos_terms, neg_terms = explain_review_terms(model, txt, top_k_each=7)
-            pos_terms = filter_terms(pos_terms)
-            neg_terms = filter_terms(neg_terms)
-            st.markdown(
-                f"<div class='rs-card'><div class='rs-sub'>AI score: <b>{p:.3f}</b></div>"
-                f"<div style='margin-top:8px'>{highlight_terms_both(txt, pos_terms, neg_terms)}</div></div>",
-                unsafe_allow_html=True
+            chips = "".join(
+                f'<span class="rs-theme-chip red">{p}</span>'
+                for p in top_neg_phrases[:10]
             )
+            st.markdown(chips, unsafe_allow_html=True)
+        else:
+            st.caption("Not enough negative phrase signals.")
+        st.markdown("</div>", unsafe_allow_html=True)
 
-    st.markdown("---")
+    st.markdown('<div class="rs-batch-divider"></div>', unsafe_allow_html=True)
 
-    c1, c2, c3 = st.columns([1.1, 1.2, 1.2])
-    with c1:
-        st.markdown("<div class='rs-card'><div class='rs-title'>Distribution (5 levels)</div></div>", unsafe_allow_html=True)
-        st.plotly_chart(donut_bucket_distribution(out, bucket_col="bucket"), use_container_width=True)
-    with c2:
-        st.markdown("<div class='rs-card'><div class='rs-title'>Counts by Category</div></div>", unsafe_allow_html=True)
-        st.plotly_chart(bar_bucket_distribution(out, bucket_col="bucket"), use_container_width=True)
-    with c3:
-        st.markdown("<div class='rs-card'><div class='rs-title'>Confidence Spread</div></div>", unsafe_allow_html=True)
-        st.plotly_chart(confidence_hist(out, proba_col="proba_pos"), use_container_width=True)
-
-    st.markdown("---")
-
-    st.markdown("## 🔎 Drilldown by Category")
+    # ======================================================
+    # 6. DRILLDOWN
+    # ======================================================
+    st.markdown(
+        '<div class="rs-section"><div class="rs-section-icon">🔎</div>'
+        '<span class="rs-section-title">Drilldown by Category</span></div>',
+        unsafe_allow_html=True
+    )
     st.caption("Pick a category to see examples, themes, and what it means.")
 
     d1, d2, d3 = st.columns([1.1, 1.0, 1.0])
@@ -1064,7 +2043,8 @@ elif st.session_state.page == "Batch Results":
 
     st.markdown(
         f"<div class='rs-card'><div class='rs-title'>Filtered results</div>"
-        f"<div class='rs-sub'>{len(view):,} rows match your filters</div></div>",
+        f"<div class='rs-kpi'>{len(view):,}</div>"
+        f"<div class='rs-sub'>reviews match your filters</div></div>",
         unsafe_allow_html=True
     )
 
@@ -1073,38 +2053,12 @@ elif st.session_state.page == "Batch Results":
         pos_phr, neg_phr = extract_top_phrases_from_group(model, bucket_texts, top_n=10)
 
         st.markdown("### 📌 Key Themes in this Category")
-        chips = "".join([f"<span class='rs-chip'>{p}</span>" for p in (neg_phr[:5] + pos_phr[:5])])
-        st.markdown(f"<div class='rs-card'>{chips}</div>", unsafe_allow_html=True)
+        chips = "".join(
+            [f"<span class='rs-theme-chip red'>{p}</span>" for p in neg_phr[:5]]
+            + [f"<span class='rs-theme-chip green'>{p}</span>" for p in pos_phr[:5]]
+        )
+        st.markdown(f"<div class='rs-theme-panel'>{chips}</div>", unsafe_allow_html=True)
 
-        st.markdown("### 🧾 Example Reviews (with highlights)")
-        examples = view.sort_values("confidence", ascending=False).head(6)
-        for _, r in examples.iterrows():
-            txt = str(r[text_col_used])
-            p = float(r["proba_pos"])
-            pos_terms, neg_terms = explain_review_terms(model, txt, top_k_each=7)
-            pos_terms = filter_terms(pos_terms)
-            neg_terms = filter_terms(neg_terms)
-
-            st.markdown(
-                f"<div class='rs-card'>"
-                f"<div class='rs-sub'>AI score: <b>{p:.3f}</b> | {r['bucket']}</div>"
-                f"<div style='margin-top:8px'>{highlight_terms_both(txt, pos_terms, neg_terms)}</div>"
-                f"</div>",
-                unsafe_allow_html=True
-            )
-
-    st.markdown("---")
-
-    st.markdown("## 📋 Results Table (download-ready)")
-    st.dataframe(view.head(200), use_container_width=True)
-
-    st.download_button(
-        "Download results (CSV)",
-        out.to_csv(index=False).encode("utf-8"),
-        file_name="reviewsense_results.csv",
-        mime="text/csv",
-        use_container_width=True
-    )
 
 
 # PAGE: BUSINESS INSIGHTS
@@ -1158,14 +2112,36 @@ elif st.session_state.page == "Business Insights":
     focus_index = (pct_neg + 0.5 * pct_mix)
 
     k1, k2, k3, k4 = st.columns(4)
+
+    def bi_review_card(title, icon, count, pct, kind, subtitle):
+        return f"""
+        <div class='rs-bi-review-card {kind}' style='--bi-pct:{pct:.1f}%;'>
+            <div class='rs-bi-review-head'>
+                <div class='rs-bi-review-title'>{title}</div>
+                <div class='rs-bi-review-icon'>{icon}</div>
+            </div>
+            <div class='rs-bi-review-stat'>
+                <span class='rs-bi-review-count'>{count:,}</span>
+                <span class='rs-bi-review-pct'>{pct:.1f}%</span>
+            </div>
+            <div class='rs-bi-review-sub'>{subtitle}</div>
+            <div class='rs-bi-review-track'><div class='rs-bi-review-fill'></div></div>
+            <div class='rs-bi-review-foot'>
+                <span>{count:,} reviews</span>
+                <span>{pct:.1f}% of dataset</span>
+            </div>
+        </div>
+        """
+
     with k1:
-        st.markdown(f"<div class='rs-card'><div class='rs-title'>Positive</div><div class='rs-kpi'>{pct_pos:.1f}%</div><div class='rs-sub'>Satisfied customers</div></div>", unsafe_allow_html=True)
+        st.markdown(bi_review_card("Positive Reviews", "😊", len(pos_group), pct_pos, "positive", "Satisfied customers"), unsafe_allow_html=True)
     with k2:
-        st.markdown(f"<div class='rs-card'><div class='rs-title'>Negative</div><div class='rs-kpi'>{pct_neg:.1f}%</div><div class='rs-sub'>Pain points present</div></div>", unsafe_allow_html=True)
+        st.markdown(bi_review_card("Negative Reviews", "😟", len(neg_group), pct_neg, "negative", "Customer pain points"), unsafe_allow_html=True)
     with k3:
-        st.markdown(f"<div class='rs-card'><div class='rs-title'>Mixed</div><div class='rs-kpi'>{pct_mix:.1f}%</div><div class='rs-sub'>Pros + cons</div></div>", unsafe_allow_html=True)
+        st.markdown(bi_review_card("Mixed Reviews", "😐", len(mix_group), pct_mix, "mixed", "Pros + cons in one review"), unsafe_allow_html=True)
     with k4:
-        st.markdown(f"<div class='rs-card'><div class='rs-title'>Focus Index</div><div class='rs-kpi'>{focus_index:.1f}</div><div class='rs-sub'>Higher = fix priority</div></div>", unsafe_allow_html=True)
+        focus_pct = min(max(focus_index, 0), 100)
+        st.markdown(bi_review_card("Focus Index", "🎯", int(round(focus_index)), focus_pct, "mixed", "Higher score = fix priority"), unsafe_allow_html=True)
 
     st.markdown("---")
 
@@ -1176,15 +2152,47 @@ elif st.session_state.page == "Business Insights":
         if not top_pos_phrases:
             st.info("Not enough signal to extract strong positive themes.")
         else:
-            chips = "".join([f"<span class='rs-chip'>{p}</span>" for p in top_pos_phrases[:8]])
-            st.markdown(f"<div class='rs-card'><div class='rs-sub'>Top praise themes</div>{chips}</div>", unsafe_allow_html=True)
+            chips = "".join([f"<span class='rs-bi-theme-chip'>{p}</span>" for p in top_pos_phrases[:8]])
+            st.markdown(
+                f"<div class='rs-bi-theme-card positive'>"
+                f"<div class='rs-bi-theme-label'>Top praise themes</div>"
+                f"<div class='rs-bi-theme-chips'>{chips}</div></div>",
+                unsafe_allow_html=True
+            )
+
+        if len(pos_group) > 0:
+            sample_pos = pos_group.sort_values("confidence", ascending=False).head(1) if "confidence" in pos_group.columns else pos_group.head(1)
+            row = sample_pos.iloc[0]
+            quote = str(row.get(text_col, "")).strip()[:320]
+            st.markdown(
+                f"<div class='rs-bi-review-card positive' style='--bi-pct:{pct_pos:.1f}%; margin-top:12px;'>"
+                f"<div class='rs-bi-review-head'><div class='rs-bi-review-title'>⭐ Positive review highlight</div><div class='rs-bi-review-icon'>✓</div></div>"
+                f"<div class='rs-bi-quote' style='--bi-color:#35D07F'><strong>Customer:</strong> “{quote}”</div></div>",
+                unsafe_allow_html=True
+            )
 
         st.markdown("### ⚠️ What’s Driving Complaints")
         if not top_neg_phrases:
             st.info("Not enough signal to extract strong complaint themes.")
         else:
-            chips = "".join([f"<span class='rs-chip'>{p}</span>" for p in top_neg_phrases[:8]])
-            st.markdown(f"<div class='rs-card'><div class='rs-sub'>Top complaint themes</div>{chips}</div>", unsafe_allow_html=True)
+            chips = "".join([f"<span class='rs-bi-theme-chip'>{p}</span>" for p in top_neg_phrases[:8]])
+            st.markdown(
+                f"<div class='rs-bi-theme-card negative'>"
+                f"<div class='rs-bi-theme-label'>Top complaint themes</div>"
+                f"<div class='rs-bi-theme-chips'>{chips}</div></div>",
+                unsafe_allow_html=True
+            )
+
+        if len(neg_group) > 0:
+            sample_neg = neg_group.sort_values("confidence", ascending=False).head(1) if "confidence" in neg_group.columns else neg_group.head(1)
+            row = sample_neg.iloc[0]
+            quote = str(row.get(text_col, "")).strip()[:320]
+            st.markdown(
+                f"<div class='rs-bi-review-card negative' style='--bi-pct:{pct_neg:.1f}%; margin-top:12px;'>"
+                f"<div class='rs-bi-review-head'><div class='rs-bi-review-title'>🚨 Negative review highlight</div><div class='rs-bi-review-icon'>!</div></div>"
+                f"<div class='rs-bi-quote' style='--bi-color:#FF5570'><strong>Customer:</strong> “{quote}”</div></div>",
+                unsafe_allow_html=True
+            )
 
     with right:
         st.markdown("### 🎯 Recommended Actions")
@@ -1280,34 +2288,68 @@ elif st.session_state.page == "Tricky Reviews":
     counts = reason_counts(df)
 
     st.markdown("### 📌 Tricky Review Categories")
-    st.caption("These categories explain *why* a review may be hard for AI to judge accurately.")
+    st.caption("See which review patterns need the most attention. Each card visualizes its share of the uploaded dataset.")
 
     if "tricky_focus" not in st.session_state:
         st.session_state.tricky_focus = "All tricky reviews"
 
-    def focus_button(label, key):
-        active = (st.session_state.tricky_focus == key)
-        if st.button(
-            f"{label}\n\n{counts.get(key, 0):,}",
-            use_container_width=True,
-            type=("primary" if active else "secondary")
-        ):
-            st.session_state.tricky_focus = key
-            st.rerun()
+    # Build category data first so the UI and chart always use the exact same counts.
+    tricky_items = [
+        ("Needs Human Review", "Needs manual review (uncertain)", "#FF4D6D", "🧠"),
+        ("Mixed Feelings", "Mixed sentiment cases", "#FFB020", "😐"),
+        ("Confusing Wording", "Negation cases", "#9B6CFF", "❓"),
+        ("Too Little Detail", "Very short reviews", "#3DA9FC", "📝"),
+        ("Strong Tone / Emphasis", "Emphasis / tone cases", "#20C7B5", "🔥"),
+    ]
 
-    b1, b2, b3, b4, b5 = st.columns(5)
-    with b1:
-        focus_button("Needs Human Review", "Needs manual review (uncertain)")
-    with b2:
-        focus_button("Mixed Feelings", "Mixed sentiment cases")
-    with b3:
-        focus_button("Confusing Wording", "Negation cases")
-    with b4:
-        focus_button("Too Little Detail", "Very short reviews")
-    with b5:
-        focus_button("Strong Tone / Emphasis", "Emphasis / tone cases")
+    total_all = len(df)
+    max_count = max([counts.get(key, 0) for _, key, _, _ in tricky_items] + [1])
 
-    if st.button("Show All", use_container_width=True):
+    # Visual category cards. The card itself is visual; the small button underneath
+    # remains the actual Streamlit interaction so filtering still works reliably.
+    card_cols = st.columns(5)
+
+    for col, (label, key, color, icon) in zip(card_cols, tricky_items):
+        count = int(counts.get(key, 0))
+        share = (count / total_all * 100) if total_all else 0
+        visual_width = (count / max_count * 100) if max_count else 0
+        active = st.session_state.tricky_focus == key
+
+        border = color if active else "rgba(255,255,255,0.14)"
+        glow = f"0 0 22px {color}35" if active else "0 8px 22px rgba(0,0,0,.14)"
+        bg = f"linear-gradient(145deg, {color}18, rgba(255,255,255,.045))"
+
+        card = (
+            f'<div style="background:{bg};border:1px solid {border};'
+            f'border-top:3px solid {color};border-radius:16px;padding:14px 14px 13px;'
+            f'min-height:172px;box-shadow:{glow};">'
+            f'<div style="font-size:13px;font-weight:800;color:#E8EBF8;min-height:38px;line-height:1.35;">'
+            f'{icon}&nbsp; {label}</div>'
+            f'<div style="display:flex;align-items:flex-end;justify-content:space-between;margin-top:8px;">'
+            f'<div style="font-size:25px;font-weight:900;color:{color};line-height:1;">{count:,}</div>'
+            f'<div style="font-size:12px;font-weight:800;color:#AEB6D4;">{share:.1f}%</div>'
+            f'</div>'
+            f'<div style="height:8px;margin-top:15px;border-radius:99px;background:rgba(255,255,255,.09);overflow:hidden;">'
+            f'<div style="width:{visual_width:.2f}%;height:100%;border-radius:99px;'
+            f'background:linear-gradient(90deg,{color},{color}CC);box-shadow:0 0 12px {color}70;"></div>'
+            f'</div>'
+            f'<div style="display:flex;justify-content:space-between;margin-top:7px;font-size:10px;color:#7F89A8;">'
+            f'<span>review volume</span><span style="color:#C9D0E8;font-weight:700;">{share:.1f}% of dataset</span>'
+            f'</div>'
+            f'</div>'
+        )
+        with col:
+            st.markdown(card, unsafe_allow_html=True)
+            if st.button(
+                "Selected" if active else "View reviews",
+                key=f"tricky_{key}",
+                use_container_width=True,
+                type="primary" if active else "secondary",
+            ):
+                st.session_state.tricky_focus = key
+                st.rerun()
+
+    if st.button("↻ Show All Tricky Reviews", use_container_width=True, key="tricky_show_all"):
         st.session_state.tricky_focus = "All tricky reviews"
         st.rerun()
 
@@ -1323,18 +2365,55 @@ elif st.session_state.page == "Tricky Reviews":
     focus_label = FRIENDLY_FOCUS.get(focus, focus)
 
     chart_df = pd.DataFrame({
-        "Category": ["Needs Human Review", "Mixed Feelings", "Confusing Wording", "Too Little Detail", "Strong Tone / Emphasis"],
-        "Count": [
-            counts["Needs manual review (uncertain)"],
-            counts["Mixed sentiment cases"],
-            counts["Negation cases"],
-            counts["Very short reviews"],
-            counts["Emphasis / tone cases"],
-        ]
+        "Category": [x[0] for x in tricky_items],
+        "Count": [counts.get(x[1], 0) for x in tricky_items],
+        "Color": [x[2] for x in tricky_items],
     })
-    fig = px.bar(chart_df, x="Category", y="Count", height=260)
-    fig.update_layout(margin=dict(t=10, b=10, l=10, r=10), xaxis_title=None, yaxis_title=None)
-    st.plotly_chart(fig, use_container_width=True)
+
+    fig = px.bar(
+        chart_df,
+        x="Count",
+        y="Category",
+        orientation="h",
+        text="Count",
+        color="Category",
+        color_discrete_sequence=[x[2] for x in tricky_items],
+        height=285,
+    )
+    fig.update_traces(
+        texttemplate="%{text:,}",
+        textposition="outside",
+        cliponaxis=False,
+        marker_line_width=0,
+    )
+    fig.update_layout(
+        showlegend=False,
+        margin=dict(t=15, b=10, l=10, r=55),
+        xaxis_title=None,
+        yaxis_title=None,
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="#E9ECF8"),
+        bargap=0.28,
+    )
+    fig.update_xaxes(
+        showgrid=True,
+        gridcolor="rgba(255,255,255,0.08)",
+        zeroline=False,
+        tickfont=dict(color="#8F98B5"),
+    )
+    fig.update_yaxes(
+        showgrid=False,
+        tickfont=dict(color="#C8CEE2", size=11),
+        categoryorder="array",
+        categoryarray=[x[0] for x in tricky_items],
+    )
+
+    st.markdown(
+        '<div style="margin-top:16px;margin-bottom:4px;font-size:14px;font-weight:800;color:#E9ECF8;">📊 Category volume</div>',
+        unsafe_allow_html=True,
+    )
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
     c2, c3 = st.columns([1.2, 1.2])
     with c2:
@@ -1458,7 +2537,7 @@ elif st.session_state.page in ["Model Trust", "Trust & Reliability"]:
         df["confidence"] = np.round(np.abs(df["proba_pos"] - 0.5) * 2, 4)
 
     st.markdown("### ✅ Score Zones (Safe vs Needs Review)")
-    st.caption("Click a segment to view the exact reviews behind that number.")
+    st.caption("See where reviews are safe to approve, need human review, or should be escalated.")
 
     zones = [
         ("Auto-escalate (Strong negative)", 0.00, 0.25),
@@ -1477,56 +2556,78 @@ elif st.session_state.page in ["Model Trust", "Trust & Reliability"]:
     df["_zone"] = df["proba_pos"].apply(zone_name)
     zorder = [z[0] for z in zones]
     zcounts = df["_zone"].value_counts().reindex(zorder).fillna(0).astype(int)
-
-    total = len(df)
-    zdf = pd.DataFrame({"Zone": zcounts.index, "Count": zcounts.values})
+    total = max(len(df), 1)
 
     if "trust_zone_focus" not in st.session_state:
         st.session_state.trust_zone_focus = None
 
-    seg1, seg2, seg3, seg4 = st.columns([1, 1, 1, 1])
+    zone_ui = [
+        ("Auto-approve", "Auto-approve (Strong positive)", "🟢", "Strong positive", "#35D07F"),
+        ("Needs review", "Needs review (Mixed/uncertain)", "🟡", "Mixed / uncertain", "#FFC83D"),
+        ("Auto-escalate", "Auto-escalate (Strong negative)", "🔴", "Strong negative", "#FF5572"),
+        ("Likely positive", "Likely positive", "🔵", "Positive range", "#58A6FF"),
+    ]
 
-    def zone_btn(label: str, zone_key: str, count: int, col):
-        active = (st.session_state.trust_zone_focus == zone_key)
+    cols = st.columns(4)
+    for col, (label, key, emoji, subtitle, color) in zip(cols, zone_ui):
+        count = int(zcounts.get(key, 0))
+        pct = count / total * 100
+        active = st.session_state.trust_zone_focus == key
+        border = color if active else "rgba(255,255,255,.13)"
+        glow = f"0 0 24px {color}33" if active else "0 8px 22px rgba(0,0,0,.16)"
+
         with col:
-            if st.button(
-                f"{label}: {count:,}",
-                use_container_width=True,
-                type=("primary" if active else "secondary"),
-            ):
-                st.session_state.trust_zone_focus = zone_key
+            card_html = f'''<div style="background:linear-gradient(145deg,rgba(255,255,255,.075),rgba(255,255,255,.025));border:1px solid {border};border-top:3px solid {color};border-radius:18px;padding:17px 16px 15px;min-height:178px;box-shadow:{glow};">
+<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;"><div style="font-weight:800;color:#EEF1FF;font-size:14px;">{emoji} {label}</div><div style="font-size:10px;color:#8F98B8;">{pct:.1f}%</div></div>
+<div style="margin-top:10px;color:{color};font-size:30px;font-weight:900;line-height:1;">{count:,}</div>
+<div style="margin-top:4px;color:#8F98B8;font-size:11px;">{subtitle}</div>
+<div style="height:8px;background:rgba(255,255,255,.09);border-radius:99px;overflow:hidden;margin-top:17px;"><div style="height:100%;width:{min(pct,100):.2f}%;background:linear-gradient(90deg,{color},{color}AA);border-radius:99px;box-shadow:0 0 10px {color}66;"></div></div>
+<div style="display:flex;justify-content:space-between;margin-top:7px;color:#7F89AA;font-size:10px;"><span>Share of reviews</span><b style="color:#DCE1F4;">{pct:.1f}%</b></div>
+</div>'''
+            st.markdown(card_html, unsafe_allow_html=True)
+
+    st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+
+    b1, b2, b3, b4 = st.columns(4)
+    button_specs = [
+        (b1, "🔎 View Auto-approve", "Auto-approve (Strong positive)"),
+        (b2, "🔎 View Needs review", "Needs review (Mixed/uncertain)"),
+        (b3, "🔎 View Auto-escalate", "Auto-escalate (Strong negative)"),
+    ]
+    for col, label, key in button_specs:
+        with col:
+            if st.button(label, use_container_width=True, type="primary" if st.session_state.trust_zone_focus == key else "secondary"):
+                st.session_state.trust_zone_focus = key
                 st.rerun()
-
-    zone_btn("Auto-approve", "Auto-approve (Strong positive)", int(zcounts["Auto-approve (Strong positive)"]), seg1)
-    zone_btn("Needs review", "Needs review (Mixed/uncertain)", int(zcounts["Needs review (Mixed/uncertain)"]), seg2)
-    zone_btn("Auto-escalate", "Auto-escalate (Strong negative)", int(zcounts["Auto-escalate (Strong negative)"]), seg3)
-
-    with seg4:
-        if st.button("Clear", use_container_width=True):
+    with b4:
+        if st.button("Clear selection", use_container_width=True):
             st.session_state.trust_zone_focus = None
             st.rerun()
 
     needs_review = int(zcounts["Needs review (Mixed/uncertain)"])
     auto_ok = int(zcounts["Auto-approve (Strong positive)"])
     auto_bad = int(zcounts["Auto-escalate (Strong negative)"])
+    likely_pos = int(zcounts["Likely positive"])
+    likely_neg = int(zcounts["Likely negative"])
 
-    st.markdown(
-        f"""
-        <div class="rs-card" style="padding:10px 12px;">
-          <div style="display:flex; gap:10px; flex-wrap:wrap;">
-            <span class="rs-chip">Total: <b>{total:,}</b></span>
-            <span class="rs-chip">Auto-approve: <b>{auto_ok:,}</b></span>
-            <span class="rs-chip">Auto-escalate: <b>{auto_bad:,}</b></span>
-            <span class="rs-chip">Needs review: <b>{needs_review:,}</b></span>
-          </div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
+    parts = [
+        ("Auto-escalate", auto_bad, "#FF5572"),
+        ("Likely negative", likely_neg, "#FF8B5C"),
+        ("Needs review", needs_review, "#FFC83D"),
+        ("Likely positive", likely_pos, "#58A6FF"),
+        ("Auto-approve", auto_ok, "#35D07F"),
+    ]
+    bar_html = "".join(f'''<div title="{name}: {count:,} ({count/total*100:.1f}%)" style="width:{count/total*100:.3f}%;height:100%;background:{color};"></div>''' for name, count, color in parts if count > 0)
+    legend_html = "".join(f'''<span style="display:inline-flex;align-items:center;gap:6px;margin-right:16px;color:#AAB2CF;font-size:11px;"><i style="width:9px;height:9px;border-radius:3px;background:{color};display:inline-block;"></i>{name} <b style="color:#E8ECFA;">{count:,}</b></span>''' for name, count, color in parts)
 
-    fig_zone = px.pie(zdf, names="Zone", values="Count", hole=0.65, height=320)
-    fig_zone.update_layout(margin=dict(t=10, b=10, l=10, r=10), legend_title_text="")
-    st.plotly_chart(fig_zone, use_container_width=True)
+    risk_html = f'''<div style="margin-top:18px;padding:16px 18px;border:1px solid rgba(255,255,255,.10);border-radius:18px;background:rgba(255,255,255,.035);">
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:11px;"><span style="font-weight:800;color:#E9EDFF;font-size:13px;">Risk distribution</span><span style="color:#7F89AA;font-size:11px;">{total:,} reviews</span></div>
+<div style="height:18px;width:100%;display:flex;overflow:hidden;border-radius:99px;background:rgba(255,255,255,.08);">{bar_html}</div>
+<div style="margin-top:12px;line-height:2;">{legend_html}</div>
+</div>'''
+    st.markdown(risk_html, unsafe_allow_html=True)
+
+    st.markdown(f'''<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;"><span class="rs-chip">Total: <b>{total:,}</b></span><span class="rs-chip">Auto-approve: <b>{auto_ok:,}</b></span><span class="rs-chip">Auto-escalate: <b>{auto_bad:,}</b></span><span class="rs-chip">Needs review: <b>{needs_review:,}</b></span></div>''', unsafe_allow_html=True)
 
     zone_focus = st.session_state.trust_zone_focus
 
@@ -1718,4 +2819,4 @@ elif st.session_state.page in ["Model Trust", "Trust & Reliability"]:
 
     with st.expander("Technical details (optional)"):
         if not df_compare.empty:
-            st.dataframe(df_compare.head(10), use_container_width=True)
+            st.dataframe(df_compare.head(10), use_container_width=True)₹
