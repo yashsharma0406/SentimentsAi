@@ -1,9 +1,5 @@
 # ReviewSense AI 🧠📊
 
-[![CI](https://github.com/Gujjar-Pranav/review-sense-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/Gujjar-Pranav/review-sense-ai/actions/workflows/ci.yml)
-
-🔗 **Live App:** https://review-sense-ai-mvvd48vdsasmys7ecjenpa.streamlit.app/  
-*(If sleeping, open once to wake it up)*
 
 ---
 
@@ -200,6 +196,6 @@ Drift & confidence alerts
 
 👤 Author
 
-Pranav Gujjar
-Machine Learning & Data Science
+YASH SHARMA
+Machine Learning
 
