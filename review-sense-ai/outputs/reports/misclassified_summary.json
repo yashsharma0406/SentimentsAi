@@ -1,0 +1,90 @@
+{
+  "total_test": 2000,
+  "total_misclassified": 293,
+  "false_positives": 147,
+  "false_negatives": 146,
+  "top_fp_examples": [
+    {
+      "review_raw": "Mara Wilson: I Love Mara Wilson she is cute and beautiful.I also loved her in Matilda. I think that Matilda was beautiful.she is a good actress.she was a cute girl in Mrs.Doubtfire.I think that she was very good at that part",
+      "proba_pos": 0.9903800218357142
+    },
+    {
+      "review_raw": "Not as good as most: I love Little Critter books, but this one isn't as good as most. It is cute, and my kids like it fine, but others are better. I think my favorite are the ones titled \"Just Me and....\"",
+      "proba_pos": 0.988781075581711
+    },
+    {
+      "review_raw": "Dismal: I guess the part I liked best was where Eleanor discovered that she was related to the ghost haunting the house. It was really believable. Tears came to my eyes it was so touching. Then, when the cherubs on the wall came to life, I was even more moved as there little souls finally were freed to go to heaven. That was really touching. I am just amazed at the screenwriter's brilliance. And all those special effects! He was so clever to add those. It must of taken a great deal of intelligence to have everything--even the ceilings come alive. I feel richer as a human for investing my time in this masterpiece.",
+      "proba_pos": 0.9852804617923824
+    },
+    {
+      "review_raw": "not too durable.: This was great as a Halloween Costume. however, after my daughter tried it on, one of the straps on the leg covers broke and the mask was too tight. Good for a one time use. My daughter enjoyed it.",
+      "proba_pos": 0.9804607536578365
+    },
+    {
+      "review_raw": "Very, very cute.: If you like cute. It's okay, but you have to waid througha lot of syrupy, cloying, well, Canadianess. This stuffwould be great on Sesame Street.",
+      "proba_pos": 0.9789150210020573
+    },
+    {
+      "review_raw": "This is Disgusting: The German Pinscher is a wonderful Family pet and this type of comments makes them sound dangerous. I own 3 German Pinschers and they are wonderful pets. I resent this type of product.",
+      "proba_pos": 0.9735082202496322
+    },
+    {
+      "review_raw": "why i think the book is going to be great: I think this book is really good for people who continuously tried to be one of the people out on the court.This is the perfect book to start with.",
+      "proba_pos": 0.9650057199411052
+    },
+    {
+      "review_raw": "way too much: I am not usually so critical, and I must admit I read several of the books years ago, but I finally put them down without reading the rest because there was just too many descriptions of sex in them. The detailed and varied descriptions were simply unneccesary for a book that is touted as a \"must read\" for women as young as 10!",
+      "proba_pos": 0.9575957680642869
+    },
+    {
+      "review_raw": "Well...: I've read \"On The Road\" three times over the last six years. It is, in my opinion, a masterpiece. Having said that I decided to get \"Dharma Bums\" and I did not care for most of the book as I am not into Buddha and zen. Only once in a while a glimmer of the fun of \"On The Road\" seeped in, but not enough.I also did not like the supporting characters as I did in \"On The Road.\"This book was pushed by many people as Kerouac's second best. I found it to be uninteresting and probably should not pursue any other of his books if this was considered \"his second best.\"",
+      "proba_pos": 0.9542845794937179
+    },
+    {
+      "review_raw": "The usual dreck: I had to read this when I was in high school. So did my children. Now my GRANDCHILDREN have to read it! None of us has been able to discover WHY! Of all of the superb books I have read in my life, not ONE has ever been selected for required summer reading!",
+      "proba_pos": 0.9530756063417738
+    }
+  ],
+  "top_fn_examples": [
+    {
+      "review_raw": "KING OF SLEEZE OF THE 70'S: If you enjoy bad scripts, bad actors poor film quality that was the early 70's, this is right up your alley.",
+      "proba_pos": 0.005681572785802447
+    },
+    {
+      "review_raw": "Dubbing is bad: Good movie, bad dubbing. Please releast the origanl version. I took one star off becuse of the dubbing.",
+      "proba_pos": 0.008784131973029385
+    },
+    {
+      "review_raw": "Reviews, not plot summaries: This forum is for your opinion of the book, not for each of you to explain the plot over and over again. That's already done above.",
+      "proba_pos": 0.015801887830887058
+    },
+    {
+      "review_raw": "DON'T go to ebay. Nothing except bootlegs and crooks.: It costs a lot because its an IMPORT, not a bootleg! If you're going to enjoy the CD, might as well enjoy it knowing that you didn't pay too much money for a crook to burn the CD for you. Honestly. Things cost money. To a real fan, this is worth the money. Costs a crook a penny to create a mediocre bootleg. Do you really think you're saving money?",
+      "proba_pos": 0.02026285468288846
+    },
+    {
+      "review_raw": "Great show, but no need for blu-ray: I bought this show in the blu-ray edition expecting an incredible picture, but there was nothing special about it at all. The extras are nice but not what I buy DVDs for. There's no reason to waste your money buying the blu-ray edition. They didn't have HD technology when this special was produced and they can't change that. Buy the regular DVD and save your money.",
+      "proba_pos": 0.026638732162747314
+    },
+    {
+      "review_raw": "How could you say a bad word about it???: I don't understand how anyone can possibly trash this CD. If you ever liked Musiq you should def. love this CD--From the incredible Soulstar intro to the very end of Givemorelove/Leaveamessage. The whole Cd is a standout against all other music in the insdustry. He's def. an original artist.Please don't let these reviewes sway you against buying this CD--listen to the samples yourself and if you dont like it you just don't like music/musiq.",
+      "proba_pos": 0.029532544088950164
+    },
+    {
+      "review_raw": "There's no glitches!: I don't get what everybdy is talking about. I haven't had any glitches and I'm in Troll cCountry. This game has great graphics and sound. Well, sure, it's hard. But that's the point. You wouldn't want to by a thirty dollar game that lasted two hours. That would [bad]!",
+      "proba_pos": 0.03117251554807229
+    },
+    {
+      "review_raw": "WRONGLY CLASSIFIED: The genre should have been comedy. This movie was neither scary, nor mysterious or thrilling.The scariest part to me was probably when Liam Neeson got the class stuck in his hand and had to pull it out. I found myself wondering why good actors such as this would actually agree to take part in this sorry excuse for a horror film.The movie has next to no plot, none of the stuff that happened was explained, and the stuff that was supposed to be scary wasn't. Oh My God it's a statue...let me scream in fear and trip over myself while I'm trying to run away!Skip this tripe.",
+      "proba_pos": 0.04743280510195971
+    },
+    {
+      "review_raw": "Not exactly what I expected........: but I had to make the time to finish the book to make sure that I wasn't missing anything. At times I felt there was something else that needed to be said to complete the story. Maybe for me, the author should have started with some background, instead of when the character cut off her hair, and then after she cut her hair she should have made her proud and not afraid of what others had to say about her, this should have been about her feelings and only about her feelings about her hair.",
+      "proba_pos": 0.04787263800129874
+    },
+    {
+      "review_raw": "Inside a Secret Nation: I bought this book on ebay, as it's been out-of-print for years. Don't bother with the movie; not only is the casting all wrong, but the reality was 100 times worse. Caranza Tene looked nothing like Judd Hirsch and was unbelievable violent. Steven Tene grew up in a culture where kids weren't allowed to go to school and had to beg and steal for their families. Girls were married off at age 11 and had to work, while their husbands did nothing. Loyalty meant giving all your earnings to your husband or father. If you made your fellow Gypsies angry, they'd lie to the police to get you in trouble.I'd like to see this book reissued, with a chapter on where they are now. Caranza Tene is definitely dead, and Steve Tene must be in his 60's. The telephone psychic industry probably cut into the market for fortune-tellers, so I wonder if the women now have regular jobs?",
+      "proba_pos": 0.050422133490516295
+    }
+  ]
+}
